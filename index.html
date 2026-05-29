@@ -834,6 +834,7 @@
         function renderProviders(data) {
             const container = document.getElementById('providers-container');
             if (!data) {
+                console.error('[RENDER] No data received from API');
                 container.innerHTML = `
                     <div class="error-message">
                         <strong>⚠️ Unable to load API provider status</strong><br>
@@ -861,11 +862,14 @@
             const providerCount = Object.keys(data).length;
 
             console.log('[RENDER] All providers data:', data);
+            console.log('[RENDER] Data type:', typeof data);
+            console.log('[RENDER] Data keys:', Object.keys(data));
 
             for (const [provider, status] of Object.entries(data)) {
-                // Status can be: 'operational', 'degraded', 'down', or any other string
-                const isOperational = status?.toLowerCase() === 'operational';
-                const isDegraded = status?.toLowerCase() === 'degraded';
+                // Convert status to string safely and handle null/undefined
+                const statusStr = String(status || '').toLowerCase().trim();
+                const isOperational = statusStr === 'operational';
+                const isDegraded = statusStr === 'degraded';
                 
                 if (isOperational) operationalCount++;
 
@@ -873,7 +877,7 @@
                 const statusText = isOperational ? '✓ Operational' : isDegraded ? '⚠ Degraded' : '✗ Down';
                 const statusBadgeClass = isDegraded ? 'degraded' : !isOperational ? 'down' : '';
 
-                console.log(`[RENDER] ${provider}: ${status} → ${statusText}`);
+                console.log(`[RENDER] ${provider}: raw="${status}" → clean="${statusStr}" → ${statusText}`);
 
                 html += `
                     <div class="provider-card ${statusClass}">
