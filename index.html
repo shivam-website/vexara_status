@@ -858,15 +858,22 @@
 
             let operationalCount = 0;
             let html = '';
+            const providerCount = Object.keys(data).length;
+
+            console.log('[RENDER] All providers data:', data);
 
             for (const [provider, status] of Object.entries(data)) {
-                const isOperational = status === 'operational';
-                const isDegraded = status === 'degraded';
+                // Status can be: 'operational', 'degraded', 'down', or any other string
+                const isOperational = status?.toLowerCase() === 'operational';
+                const isDegraded = status?.toLowerCase() === 'degraded';
+                
                 if (isOperational) operationalCount++;
 
                 const statusClass = isOperational ? 'operational' : isDegraded ? 'degraded' : '';
-                const statusText = isOperational ? 'Operational' : isDegraded ? 'Degraded' : 'Down';
+                const statusText = isOperational ? '✓ Operational' : isDegraded ? '⚠ Degraded' : '✗ Down';
                 const statusBadgeClass = isDegraded ? 'degraded' : !isOperational ? 'down' : '';
+
+                console.log(`[RENDER] ${provider}: ${status} → ${statusText}`);
 
                 html += `
                     <div class="provider-card ${statusClass}">
@@ -886,6 +893,10 @@
                                 <span class="detail-label">Provider</span>
                                 <span class="detail-value">${provider}</span>
                             </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Health</span>
+                                <span class="detail-value">${isOperational ? '100%' : isDegraded ? '50%' : '0%'}</span>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -894,6 +905,7 @@
             container.innerHTML = html;
             document.getElementById('active-providers').textContent = operationalCount;
 
+            console.log(`[RENDER] Operational: ${operationalCount}/${providerCount}`);
             return operationalCount;
         }
 
@@ -901,12 +913,31 @@
         function renderKBStatus(data) {
             const container = document.getElementById('kb-container');
             if (!data) {
-                container.innerHTML = '<div class="error-message">Unable to load knowledge base status.</div>';
+                container.innerHTML = `
+                    <div class="provider-card operational">
+                        <div class="provider-header">
+                            <div class="provider-name">SEE Mathematics Curriculum</div>
+                            <div class="provider-status">
+                                <span class="status-dot-small"></span>
+                                Unable to fetch
+                            </div>
+                        </div>
+                        <div class="provider-details">
+                            <div class="detail-row">
+                                <span class="detail-label">Chunks Loaded</span>
+                                <span class="detail-value">--</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
                 return;
             }
 
-            const { chunks_loaded, metadata } = data;
+            const chunks_loaded = data.chunks_loaded || 0;
+            const metadata = data.metadata || {};
             const isHealthy = chunks_loaded > 0;
+
+            console.log('[KB] Data:', { chunks_loaded, metadata });
 
             const html = `
                 <div class="provider-card ${isHealthy ? 'operational' : ''}">
@@ -914,7 +945,7 @@
                         <div class="provider-name">SEE Mathematics Curriculum</div>
                         <div class="provider-status ${isHealthy ? '' : 'down'}">
                             <span class="status-dot-small"></span>
-                            ${isHealthy ? 'Loaded' : 'Error'}
+                            ${isHealthy ? '✓ Loaded' : '✗ Error'}
                         </div>
                     </div>
                     <div class="provider-details">
@@ -923,12 +954,12 @@
                             <span class="detail-value">${chunks_loaded.toLocaleString()}</span>
                         </div>
                         <div class="detail-row">
-                            <span class="detail-label">Config Status</span>
+                            <span class="detail-label">Status</span>
                             <span class="detail-value">${metadata?.status || 'Ready'}</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Topics Covered</span>
-                            <span class="detail-value">7/7</span>
+                            <span class="detail-value">7/7 (Algebra, Arithmetic, Mensuration, Geometry, Statistics, Sets, Trigonometry)</span>
                         </div>
                     </div>
                 </div>
@@ -944,22 +975,26 @@
             document.getElementById('last-update').textContent = timeStr;
         }
 
-        // Generate mock stats (replace with real data from backend)
-        function generateStats(operationalCount) {
-            document.getElementById('system-uptime').textContent = '99.8%';
-            document.getElementById('response-time').textContent = '145ms';
-            document.getElementById('total-requests').textContent = '12.4K';
+        // Generate stats from real provider data
+        function generateStats(operationalCount, providerCount) {
+            // Calculate stats based on real data
+            const uptime = operationalCount === providerCount ? 99.9 : (operationalCount / providerCount * 100).toFixed(1);
+            
+            // These would come from real tracking - for now show calculated values
+            document.getElementById('system-uptime').textContent = uptime + '%';
+            document.getElementById('response-time').textContent = window.avgResponseTime ? Math.round(window.avgResponseTime) + 'ms' : '--';
+            document.getElementById('total-requests').textContent = window.totalRequests || '0';
 
             // Update overall status
             const statusIndicator = document.getElementById('overall-status');
             const statusCard = document.querySelector('.status-indicator');
             
-            if (operationalCount >= 3) {
+            if (operationalCount === providerCount) {
                 statusIndicator.textContent = 'All Systems Operational';
                 statusCard.style.borderColor = 'var(--success)';
                 statusCard.style.background = 'rgba(16, 185, 129, 0.1)';
                 statusCard.style.color = 'var(--success)';
-            } else if (operationalCount >= 2) {
+            } else if (operationalCount >= Math.ceil(providerCount / 2)) {
                 statusIndicator.textContent = 'Degraded Performance';
                 statusCard.style.borderColor = 'var(--warning)';
                 statusCard.style.background = 'rgba(245, 158, 11, 0.1)';
@@ -972,25 +1007,80 @@
             }
         }
 
+        // Initialize app and tracking
+        window.avgResponseTime = 0;
+        window.totalRequests = 0;
+        window.requestTimings = [];
+
         // Initialize
         async function init() {
+            console.log('[INIT] Starting status page initialization...');
             updateLastUpdate();
 
+            const startTime = performance.now();
             const providerData = await fetchProviderStatus();
+            const fetchTime = performance.now() - startTime;
+            
+            // Track response time
+            window.requestTimings.push(fetchTime);
+            window.avgResponseTime = window.requestTimings.reduce((a, b) => a + b) / window.requestTimings.length;
+            window.totalRequests++;
+
+            console.log(`[INIT] Provider fetch took ${fetchTime.toFixed(2)}ms`);
+            
             const operationalCount = renderProviders(providerData) || 0;
+            const providerCount = providerData ? Object.keys(providerData).length : 1;
 
+            const kbStartTime = performance.now();
             const kbData = await fetchKBStatus();
-            renderKBStatus(kbData);
+            const kbFetchTime = performance.now() - kbStartTime;
+            
+            window.requestTimings.push(kbFetchTime);
+            window.avgResponseTime = window.requestTimings.reduce((a, b) => a + b) / window.requestTimings.length;
+            window.totalRequests++;
 
-            generateStats(operationalCount);
+            console.log(`[INIT] KB fetch took ${kbFetchTime.toFixed(2)}ms`);
+            
+            renderKBStatus(kbData);
+            generateStats(operationalCount, providerCount);
+
+            console.log('[INIT] Initialization complete. Setting up refresh interval...');
 
             // Refresh every 30 seconds
             setInterval(async () => {
+                console.log('[REFRESH] Refreshing data...');
                 updateLastUpdate();
+                
+                const refreshStartTime = performance.now();
                 const newProviderData = await fetchProviderStatus();
-                renderProviders(newProviderData);
+                const newFetchTime = performance.now() - refreshStartTime;
+                
+                window.requestTimings.push(newFetchTime);
+                // Keep only last 20 timings to prevent memory bloat
+                if (window.requestTimings.length > 20) {
+                    window.requestTimings.shift();
+                }
+                window.avgResponseTime = window.requestTimings.reduce((a, b) => a + b) / window.requestTimings.length;
+                window.totalRequests++;
+                
+                const newOperationalCount = renderProviders(newProviderData) || 0;
+                const newProviderCount = newProviderData ? Object.keys(newProviderData).length : 1;
+                
+                const newKbStartTime = performance.now();
                 const newKBData = await fetchKBStatus();
+                const newKbFetchTime = performance.now() - newKbStartTime;
+                
+                window.requestTimings.push(newKbFetchTime);
+                if (window.requestTimings.length > 20) {
+                    window.requestTimings.shift();
+                }
+                window.avgResponseTime = window.requestTimings.reduce((a, b) => a + b) / window.requestTimings.length;
+                window.totalRequests++;
+                
                 renderKBStatus(newKBData);
+                generateStats(newOperationalCount, newProviderCount);
+                
+                console.log(`[REFRESH] Avg response time: ${window.avgResponseTime.toFixed(2)}ms, Total requests: ${window.totalRequests}`);
             }, 30000);
         }
 
